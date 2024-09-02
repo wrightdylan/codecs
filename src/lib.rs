@@ -6,6 +6,3 @@
 //! * Huffman
 
 pub mod huffman;
-
-pub use bincode;
-pub use serde::{Deserialize, Serialize};

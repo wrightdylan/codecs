@@ -10,11 +10,10 @@
 //! encoded data with the tree, and can be saved to file.
 //! - `decode_from_bitstream()` reverses the above function.
 use anyhow::{anyhow, Result};
-use serde::{Serialize, Deserialize};
 use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Ordering;
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq)]
 struct Node {
     ch:    Option<char>,
     left:  Option<Box<Node>>,
@@ -63,20 +62,42 @@ impl Ord for Branch {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct BitStream {
-    tree: Node,
-    pack: u8,
-    data: Vec<u8>,
+struct BitBundle<'a> {
+    data: &'a [u8],
+    byte_idx: usize,
+    bit_idx: u8,
 }
 
-impl BitStream {
-    fn new(tree: Node, pack: usize, data: Vec<u8>) -> Self {
-        Self {
-            tree,
-            pack: pack as u8,
-            data,
+impl<'a> BitBundle<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, byte_idx: 0, bit_idx: 0 }
+    }
+
+    fn read_bit(&mut self) -> Option<u8> {
+        if self.byte_idx >= self.data.len() {
+            return None;
         }
+
+        let bit = (self.data[self.byte_idx] >> (7 - self.bit_idx)) & 1;
+        self.bit_idx += 1;
+        if self.bit_idx == 8 {
+            self.byte_idx += 1;
+            self.bit_idx = 0;
+        }
+
+        Some(bit)
+    }
+
+    fn read_byte(&mut self) -> Option<u8> {
+        let mut byte: u8 = 0;
+        for _ in 0..8 {
+            if let Some(bit) = self.read_bit() {
+                byte = (byte << 1) | bit;
+            } else {
+                return None;
+            }
+        }
+        Some(byte)
     }
 }
 
@@ -130,6 +151,67 @@ fn _assign_codes(node: &Node, codes: &mut HashMap<char, String>, code: String) {
             _assign_codes(r, codes, code.clone() + "1");
         }
     }
+}
+
+// Convert a String of bits to a vector of bytes
+fn bits_to_bytes(bits: String) -> Vec<u8> {
+    let mut data = Vec::new();
+    let mut chunk_start = 0;
+    while let Some(chunk) = bits.get(chunk_start..chunk_start + 8) {
+        data.push(u8::from_str_radix(chunk, 2).unwrap());
+        chunk_start += 8;
+    }
+
+    data
+}
+
+// Recursive function to traverse the tree
+fn traverse_tree(node: &Node, bit_str: &mut String) {
+    if let Some(ch) = node.ch {
+        bit_str.push('1');
+        bit_str.push_str(&format!("{:08b}", ch.to_string().into_bytes()[0]));
+    } else {
+        bit_str.push('0');
+        traverse_tree(node.left.as_ref().unwrap(), bit_str);
+        traverse_tree(node.right.as_ref().unwrap(), bit_str);
+    }
+}
+
+// Serialise binary tree. This is done via preoder traversal of the tree.
+// Preliminary tests show this compresses the tree to a fifth of the original.
+fn ser_tree(tree: Node) -> Vec<u8> {
+    let mut bit_str = String::new();
+
+    traverse_tree(&tree, &mut bit_str);
+
+    let pack = (8 - bit_str.len() % 8) % 8;
+    bit_str.push_str(&"0".repeat(pack));
+
+    bits_to_bytes(bit_str)
+}
+
+fn build_tree(bundle: &mut BitBundle) -> Option<Node> {
+    if let Some(bit) = bundle.read_bit() {
+        if bit == 1 {
+            // Leaf node
+            if let Some(ch) = bundle.read_byte() {
+                return Some(Node::new_leaf(char::from(ch)));
+            }
+        } else if bundle.byte_idx + 1 != bundle.data.len() {
+            // Internal node
+            let left = Box::new(build_tree(bundle).unwrap());
+            let right = Box::new(build_tree(bundle).unwrap());
+            return Some(Node::new_node(left, right));
+        }
+    }
+
+    None
+}
+
+// Restores binary tree from serialisation
+fn des_tree(bytes: &[u8]) -> Node {
+    let mut bundle = BitBundle::new(bytes);
+    build_tree(&mut bundle).unwrap()
 }
 
 // Main encoder function
@@ -198,22 +280,17 @@ pub fn encode_to_bitstream(input: &str) -> Result<Vec<u8>> {
     let tree = gen_tree(input);
     let codes = assign_codes(&tree);
     let mut encoded = encode(input, &codes);
-    let pack = 8 - encoded.len() % 8;
+    let stree = ser_tree(tree);
+    let pack = (8 - encoded.len() % 8) % 8;
     encoded.push_str(&"0".repeat(pack));
 
-    let mut data = Vec::new();
-    let mut chunk_start = 0;
-    while let Some(chunk) = encoded.get(chunk_start..chunk_start + 8) {
-        data.push(u8::from_str_radix(chunk, 2).unwrap());
-        chunk_start += 8;
-    }
+    // Serialise all data according to schema
+    let mut glob = vec![stree.len() as u8];
+    glob.extend_from_slice(&stree);
+    glob.push(pack as u8);
+    glob.extend_from_slice(&bits_to_bytes(encoded));    
 
-    let glob = BitStream::new(tree, pack, data);
-
-    // Serialise struct to binary format
-    let output = bincode::serialize(&glob).unwrap();
-
-    Ok(output)
+    Ok(glob)
 }
 
 /// Decompresses a raw binary format and retrieves the tree and encoded data for decoding.
@@ -230,18 +307,26 @@ pub fn encode_to_bitstream(input: &str) -> Result<Vec<u8>> {
 /// println!("{output}");
 /// ```
 pub fn decode_from_bitstream(input: &[u8]) -> Result<String> {
+    if input.len() < 4 {
+        return Err(anyhow!("Malformed input."));
+    }
     let mut output = String::new();
 
-    // Deserialise binary data to a struct
-    let glob: BitStream = match bincode::deserialize(&input) {
-        Ok(glob) => glob,
-        Err(err) => return Err(anyhow!(err))
-    };
+    // Deserialise binary data to variables
+    let tree_len = input[0] as usize;
+    let tree_bytes = &input[1..(1 + tree_len)];
+    let pack = input[1 + tree_len];
+    let data = input[(2 + tree_len)..].to_vec();
+    if tree_bytes.len() < tree_len {
+        return Err(anyhow!("Tree size mismatch."));
+    }
 
-    let last_byte = glob.data.len() - 1;
-    let mut nodeptr = &glob.tree;
-    for (count, byte) in glob.data.iter().enumerate() {
-        let end_bit = if count != last_byte { 0 } else { glob.pack };
+    // Decode the data
+    let last_byte = data.len() - 1;
+    let tree = des_tree(tree_bytes);
+    let mut nodeptr = &tree;
+    for (count, byte) in data.iter().enumerate() {
+        let end_bit = if count != last_byte { 0 } else { pack };
         for i in (end_bit..8).rev() {
             let bit = (byte >> i) & 1;
             if bit == 0 {
@@ -251,7 +336,7 @@ pub fn decode_from_bitstream(input: &[u8]) -> Result<String> {
             }
             if let Some(ch) = nodeptr.ch {
                 output.push(ch);
-                nodeptr = &glob.tree;
+                nodeptr = &tree;
             }
         }
     }
