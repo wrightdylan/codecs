@@ -101,6 +101,11 @@ impl<'a> BitBundle<'a> {
     }
 }
 
+// Determines endianess of the host system
+// const fn is_sys_le() -> bool {
+//     u16::from_ne_bytes([1, 0]) == 1
+// }
+
 // Build a Huffman tree and discard frequencies (greatly reduces the size of the tree when serialised)
 fn gen_tree(input: &str) -> Node {
     // Count the characters
@@ -165,11 +170,19 @@ fn bits_to_bytes(bits: String) -> Vec<u8> {
     data
 }
 
+// Convert unicode bytes to 32-bit Unicode character
+fn vec_to_char(bytes: Vec<u8>) -> char {
+    std::str::from_utf8(&bytes).unwrap().chars().next().unwrap()
+}
+
 // Recursive function to traverse the tree
 fn traverse_tree(node: &Node, bit_str: &mut String) {
     if let Some(ch) = node.ch {
         bit_str.push('1');
-        bit_str.push_str(&format!("{:08b}", ch.to_string().into_bytes()[0]));
+        // As it turns out, endianness is abstracted away
+        for &ch in ch.to_string().as_bytes() {
+            bit_str.push_str(&format!("{:08b}", &ch));
+        }
     } else {
         bit_str.push('0');
         traverse_tree(node.left.as_ref().unwrap(), bit_str);
@@ -194,8 +207,19 @@ fn build_tree(bundle: &mut BitBundle) -> Option<Node> {
     if let Some(bit) = bundle.read_bit() {
         if bit == 1 {
             // Leaf node
-            if let Some(ch) = bundle.read_byte() {
+            let ch = bundle.read_byte().unwrap();
+            if ch & 0b1000_0000 == 0 {
                 return Some(Node::new_leaf(char::from(ch)));
+            } else {
+                let mut unicode = vec![ch];
+                unicode.push(bundle.read_byte().unwrap());
+                if ch & 0b1110_0000 == 0b1110_0000 {
+                    unicode.push(bundle.read_byte().unwrap());
+                }
+                if ch & 0b1111_0000 == 0b1111_0000 {
+                    unicode.push(bundle.read_byte().unwrap());
+                }
+                return Some(Node::new_leaf(vec_to_char(unicode)));
             }
         } else if bundle.byte_idx + 1 != bundle.data.len() {
             // Internal node
@@ -212,6 +236,17 @@ fn build_tree(bundle: &mut BitBundle) -> Option<Node> {
 fn des_tree(bytes: &[u8]) -> Node {
     let mut bundle = BitBundle::new(bytes);
     build_tree(&mut bundle).unwrap()
+}
+
+fn split_u16(value: u16) -> Vec<u8> {
+    let high = ((value >> 8) & 0xFF) as u8;
+    let low = (value & 0xFF) as u8;
+
+    vec![high, low]
+}
+
+fn recombine_u16(bytes: &[u8]) -> usize {
+    (bytes[0] as usize) << 8 | bytes[1] as usize
 }
 
 // Main encoder function
@@ -285,10 +320,12 @@ pub fn encode_to_bitstream(input: &str) -> Result<Vec<u8>> {
     encoded.push_str(&"0".repeat(pack));
 
     // Serialise all data according to schema
-    let mut glob = vec![stree.len() as u8];
+    let mut glob = Vec::new();
+    // Tree length info may need to be changed to variable width in the future
+    glob.extend(split_u16(stree.len() as u16));
     glob.extend_from_slice(&stree);
     glob.push(pack as u8);
-    glob.extend_from_slice(&bits_to_bytes(encoded));    
+    glob.extend_from_slice(&bits_to_bytes(encoded));
 
     Ok(glob)
 }
@@ -313,10 +350,11 @@ pub fn decode_from_bitstream(input: &[u8]) -> Result<String> {
     let mut output = String::new();
 
     // Deserialise binary data to variables
-    let tree_len = input[0] as usize;
-    let tree_bytes = &input[1..(1 + tree_len)];
-    let pack = input[1 + tree_len];
-    let data = input[(2 + tree_len)..].to_vec();
+    // Tree length header may change here too
+    let tree_len = recombine_u16(&input[0..2]);
+    let tree_bytes = &input[2..(2 + tree_len)];
+    let pack = input[2 + tree_len];
+    let data = input[(3 + tree_len)..].to_vec();
     if tree_bytes.len() < tree_len {
         return Err(anyhow!("Tree size mismatch."));
     }
