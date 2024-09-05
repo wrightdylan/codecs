@@ -9,7 +9,7 @@
 //! - `encode_to_bitstream()` provides a more useful interface that packages the
 //! encoded data with the tree, and can be saved to file.
 //! - `decode_from_bitstream()` reverses the above function.
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Ok, Result};
 use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Ordering;
 
@@ -208,15 +208,15 @@ fn build_tree(bundle: &mut BitBundle) -> Option<Node> {
         if bit == 1 {
             // Leaf node
             let ch = bundle.read_byte().unwrap();
-            if ch & 0b1000_0000 == 0 {
+            if ch & 0x80 == 0 {
                 return Some(Node::new_leaf(char::from(ch)));
             } else {
                 let mut unicode = vec![ch];
                 unicode.push(bundle.read_byte().unwrap());
-                if ch & 0b1110_0000 == 0b1110_0000 {
+                if ch & 0xE0 == 0xE0 {
                     unicode.push(bundle.read_byte().unwrap());
                 }
-                if ch & 0b1111_0000 == 0b1111_0000 {
+                if ch & 0xF0 == 0xF0 {
                     unicode.push(bundle.read_byte().unwrap());
                 }
                 return Some(Node::new_leaf(vec_to_char(unicode)));
@@ -238,15 +238,66 @@ fn des_tree(bytes: &[u8]) -> Node {
     build_tree(&mut bundle).unwrap()
 }
 
-fn split_u16(value: u16) -> Vec<u8> {
-    let high = ((value >> 8) & 0xFF) as u8;
-    let low = (value & 0xFF) as u8;
+// fn split_u16(value: u16) -> Vec<u8> {
+//     let high = (value >> 8) as u8;
+//     let low = value as u8;
 
-    vec![high, low]
+//     vec![high, low]
+// }
+
+// fn recombine_u16(bytes: &[u8]) -> usize {
+//     (bytes[0] as usize) << 8 | (bytes[1] as usize) << 0
+// }
+
+fn uint_to_vwe(num: usize) -> Result<Vec<u8>> {
+    if num > 268_435_455 {
+        return Err(anyhow!("Number is too large."));
+    }
+    
+    let num = num as u32;
+    let byte1 = (num >> 24) as u8;
+    let byte2 = (num >> 16) as u8;
+    let byte3 = (num >> 8) as u8;
+    let byte4 = num as u8;
+
+    if num < 128 {
+        return Ok(vec![num as u8]);
+    } else if num < 16_384 {
+        return Ok(vec![byte3 | 0x80, byte4]);
+    } else if num < 2_097_152 {
+        return Ok(vec![byte2 | 0xC0, byte3, byte4]);
+    } else {
+        return Ok(vec![byte1 | 0xE0, byte2, byte3, byte4]);
+    }
 }
 
-fn recombine_u16(bytes: &[u8]) -> usize {
-    (bytes[0] as usize) << 8 | bytes[1] as usize
+fn vwe_to_uint(chunk: &[u8]) -> (usize, usize) {
+    if chunk[0] & 0x80 == 0 {
+        return (chunk[0] as usize, 1);
+    } else {
+        let mut width = 1;
+        let mut first = chunk[0];
+        for i in (5..8).rev() {
+            let bit = (chunk[0] >> i) & 1;
+            if bit == 1 {
+                width += 1;
+                let mask: u8 = 1 << i;
+                first ^= mask;
+            } else {
+                break;
+            }
+        }
+        let mut byte_vec = vec![first];
+        for i in 1..width {
+            byte_vec.push(chunk[i]);
+        }
+        let mut num: u32 = 0;
+        for i in 0..width {
+            let byte = byte_vec.pop().unwrap() as u32;
+            num |= byte << (8 * i);
+        }
+        return (num as usize, width);
+    }
 }
 
 // Main encoder function
@@ -321,8 +372,10 @@ pub fn encode_to_bitstream(input: &str) -> Result<Vec<u8>> {
 
     // Serialise all data according to schema
     let mut glob = Vec::new();
-    // Tree length info may need to be changed to variable width in the future
-    glob.extend(split_u16(stree.len() as u16));
+    // Fixed width header
+    // glob.extend(split_u16(stree.len() as u16));
+    // Variable width header
+    glob.extend(uint_to_vwe(stree.len()).unwrap());
     glob.extend_from_slice(&stree);
     glob.push(pack as u8);
     glob.extend_from_slice(&bits_to_bytes(encoded));
@@ -350,11 +403,16 @@ pub fn decode_from_bitstream(input: &[u8]) -> Result<String> {
     let mut output = String::new();
 
     // Deserialise binary data to variables
-    // Tree length header may change here too
-    let tree_len = recombine_u16(&input[0..2]);
-    let tree_bytes = &input[2..(2 + tree_len)];
-    let pack = input[2 + tree_len];
-    let data = input[(3 + tree_len)..].to_vec();
+    // Fixed width tree length header
+    // let tree_len = recombine_u16(&input[0..2]);
+    // let tree_bytes = &input[2..(2 + tree_len)];
+    // let pack = input[2 + tree_len];
+    // let data = input[(3 + tree_len)..].to_vec();
+    // Variable width tree length header
+    let (tree_len, header_bytes) = vwe_to_uint(&input[0..4]);
+    let tree_bytes = &input[header_bytes..(header_bytes + tree_len)];
+    let pack = input[header_bytes + tree_len];
+    let data = input[(header_bytes + tree_len + 1)..].to_vec();
     if tree_bytes.len() < tree_len {
         return Err(anyhow!("Tree size mismatch."));
     }
