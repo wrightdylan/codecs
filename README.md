@@ -14,10 +14,11 @@
 
 Huffman is a greedy algorithm used to compress large text files. This is accomplished by building a tree based on the frequency of characters in the text. For more, see [article](https://en.wikipedia.org/wiki/Huffman_coding). Compression of files averages about 50%, and handles UTF-8 just fine.
 
-Update: `Serde` serialisation works out to be quite large, and it also includes a lot of empty bytes, most likely used as a fixed width header to describe the length of serialised bytes. Preliminary testing using a custom serialisation shows a reduction of the tree information to a 5th of `Serde`'s output. This uses a custom schema as follows:
+Update: `Serde` serialisation works out to be quite large, and it also includes a lot of empty bytes, most likely used as a fixed width header to describe the length of serialised bytes. Preliminary testing using a custom serialisation shows a reduction of the tree information to a 5th of `Serde`'s output. 
+This uses a custom schema as follows:
 ┌───┬──╌╌──┬─┬──╌╌┄┄┄┄╌╌──┐\
 └───┴──╌╌──┴─┴──╌╌┄┄┄┄╌╌──┘\
-1-4 bytes: Tree data length in variable width bytes.\
+2 or 1-4 bytes: Tree data length either in two bytes or variable width bytes.\
 n bytes: Tree data\
 1 byte: Number of data packing bits\
 m bytes: Data (indefinite length)\
@@ -29,6 +30,9 @@ The original tree data length of 1 byte was enough for standard Roman characters
 
 Update 3:
 Implementing variable width headers was just far too tempting. This is now one to four bytes, which will allow 28 bits of tree length information, but if you need 268,435,456 bytes for your tree, you're probably doing something very wrong. See the [section below](#variable-width-encoding) for more details on this encoding.
+
+Update 4:
+Fixed width or variable width headers can now be selected as a feature. The default is 2-byte fixed width, or use the `vwe_header` feature for the option.
 
 ### Implementations
 - `easy_encode()` provides a simple interface to encode a string to terminal.
