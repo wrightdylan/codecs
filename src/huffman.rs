@@ -9,6 +9,7 @@
 //! - `encode_to_bitstream()` provides a more useful interface that packages the
 //! encoded data with the tree, and can be saved to file.
 //! - `decode_from_bitstream()` reverses the above function.
+use crate::bit_tools::BitVec;
 use anyhow::{anyhow, Ok, Result};
 use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Ordering;
@@ -59,45 +60,6 @@ impl PartialOrd for Branch {
 impl Ord for Branch {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap()
-    }
-}
-
-struct BitBundle<'a> {
-    data: &'a [u8],
-    byte_idx: usize,
-    bit_idx: u8,
-}
-
-impl<'a> BitBundle<'a> {
-    fn new(data: &'a [u8]) -> Self {
-        Self { data, byte_idx: 0, bit_idx: 0 }
-    }
-
-    fn read_bit(&mut self) -> Option<u8> {
-        if self.byte_idx >= self.data.len() {
-            return None;
-        }
-
-        let bit = (self.data[self.byte_idx] >> (7 - self.bit_idx)) & 1;
-        self.bit_idx += 1;
-        if self.bit_idx == 8 {
-            self.byte_idx += 1;
-            self.bit_idx = 0;
-        }
-
-        Some(bit)
-    }
-
-    fn read_byte(&mut self) -> Option<u8> {
-        let mut byte: u8 = 0;
-        for _ in 0..8 {
-            if let Some(bit) = self.read_bit() {
-                byte = (byte << 1) | bit;
-            } else {
-                return None;
-            }
-        }
-        Some(byte)
     }
 }
 
@@ -203,7 +165,7 @@ fn ser_tree(tree: Node) -> Vec<u8> {
     bits_to_bytes(bit_str)
 }
 
-fn build_tree(bundle: &mut BitBundle) -> Option<Node> {
+fn build_tree(bundle: &mut BitVec) -> Option<Node> {
     if let Some(bit) = bundle.read_bit() {
         if bit == 1 {
             // Leaf node
@@ -234,7 +196,7 @@ fn build_tree(bundle: &mut BitBundle) -> Option<Node> {
 
 // Restores binary tree from serialisation
 fn des_tree(bytes: &[u8]) -> Node {
-    let mut bundle = BitBundle::new(bytes);
+    let mut bundle = BitVec::new(bytes);
     build_tree(&mut bundle).unwrap()
 }
 #[cfg(not(feature = "vwe_header"))]

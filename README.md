@@ -51,5 +51,6 @@ Two new functions deal with encoding/decoding variable width headers. These are 
 
 
 ## License
+This project is dual-licensed under both the [Apache License](LICENSE-APACHE) (Version 2.0) and [MIT license](LICENSE-MIT).
 
-This project is released under the GNU GPL-3.0 license. Check out the [LICENSE](LICENSE) file for more information.
+`SPDX-License-Identifier: Apache-2.0 AND MIT`
