@@ -166,7 +166,7 @@ fn ser_tree(tree: Node) -> Vec<u8> {
 }
 
 fn build_tree(bundle: &mut BitVec) -> Option<Node> {
-    if let Some(bit) = bundle.read_bit() {
+    if let Some(bit) = bundle.seq_read() {
         if bit == 1 {
             // Leaf node
             let ch = bundle.read_byte().unwrap();
@@ -183,7 +183,7 @@ fn build_tree(bundle: &mut BitVec) -> Option<Node> {
                 }
                 return Some(Node::new_leaf(vec_to_char(unicode)));
             }
-        } else if bundle.byte_idx + 1 != bundle.data.len() {
+        } else if bundle.get_byte_idx() + 1 != bundle.len() {
             // Internal node
             let left = Box::new(build_tree(bundle).unwrap());
             let right = Box::new(build_tree(bundle).unwrap());
@@ -196,7 +196,7 @@ fn build_tree(bundle: &mut BitVec) -> Option<Node> {
 
 // Restores binary tree from serialisation
 fn des_tree(bytes: &[u8]) -> Node {
-    let mut bundle = BitVec::new(bytes);
+    let mut bundle = BitVec::from(bytes);
     build_tree(&mut bundle).unwrap()
 }
 #[cfg(not(feature = "vwe_header"))]
