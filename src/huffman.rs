@@ -68,7 +68,8 @@ impl Ord for Branch {
 //     u16::from_ne_bytes([1, 0]) == 1
 // }
 
-// Build a Huffman tree and discard frequencies (greatly reduces the size of the tree when serialised)
+/// Build a Huffman tree and discard frequencies (greatly reduces the size of
+/// the tree when serialised)
 fn gen_tree(input: &str) -> Node {
     // Count the characters
     let mut char_count: HashMap<char, usize> = HashMap::new();
@@ -99,6 +100,7 @@ fn gen_tree(input: &str) -> Node {
     tree.pop().unwrap().node.as_ref().to_owned()
 }
 
+/// Assigns codes to characters by traversing the Huffman tree.
 fn assign_codes(root: &Node) -> HashMap<char, String> {
     // Generate the codes
     let mut codes = HashMap::new();
@@ -120,7 +122,7 @@ fn _assign_codes(node: &Node, codes: &mut HashMap<char, String>, code: String) {
     }
 }
 
-// Convert a String of bits to a vector of bytes
+/// Convert a String of bits to a vector of bytes
 fn bits_to_bytes(bits: String) -> Vec<u8> {
     let mut data = Vec::new();
     let mut chunk_start = 0;
@@ -137,7 +139,7 @@ fn vec_to_char(bytes: Vec<u8>) -> char {
     std::str::from_utf8(&bytes).unwrap().chars().next().unwrap()
 }
 
-// Recursive function to traverse the tree
+/// Recursive function to traverse the tree
 fn traverse_tree(node: &Node, bit_str: &mut String) {
     if let Some(ch) = node.ch {
         bit_str.push('1');
@@ -152,8 +154,8 @@ fn traverse_tree(node: &Node, bit_str: &mut String) {
     }
 }
 
-// Serialise binary tree. This is done via preoder traversal of the tree.
-// Preliminary tests show this compresses the tree to a fifth of the original.
+/// Serialise binary tree. This is done via preoder traversal of the tree.
+/// Preliminary tests show this compresses the tree to a fifth of the original.
 fn ser_tree(tree: Node) -> Vec<u8> {
     let mut bit_str = String::new();
 
@@ -165,6 +167,7 @@ fn ser_tree(tree: Node) -> Vec<u8> {
     bits_to_bytes(bit_str)
 }
 
+/// Deserialises a BitVector and rebuilds the Huffman tree
 fn build_tree(bundle: &mut BitVec) -> Option<Node> {
     if let Some(bit) = bundle.seq_read() {
         if bit == 1 {
@@ -194,11 +197,13 @@ fn build_tree(bundle: &mut BitVec) -> Option<Node> {
     None
 }
 
-// Restores binary tree from serialisation
+/// Restores binary tree from serialisation
 fn des_tree(bytes: &[u8]) -> Node {
     let mut bundle = BitVec::from(bytes);
     build_tree(&mut bundle).unwrap()
 }
+
+
 #[cfg(not(feature = "vwe_header"))]
 fn split_u16(value: u16) -> Vec<u8> {
     let high = (value >> 8) as u8;
@@ -265,7 +270,7 @@ fn vwe_to_uint(chunk: &[u8]) -> (usize, usize) {
     }
 }
 
-// Main encoder function
+/// Main encoder function
 fn encode(input: &str, codes: &HashMap<char, String>) -> String {
     let mut output = String::new();
 

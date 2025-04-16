@@ -2,7 +2,8 @@
 //! A simple implementation of a vector with bitwise operation.
 //! Second revision for improved memory management, faster performance, and
 //! expanded functionality.
-use std::alloc::{alloc, dealloc, handle_alloc_error, Layout};
+use std::alloc::{alloc, alloc_zeroed, dealloc, handle_alloc_error, Layout};
+use std::cmp::min;
 use std::fmt::{self, Display, Formatter};
 use std::ptr::NonNull;
 
@@ -15,6 +16,13 @@ pub struct BitVec {
 }
 
 impl BitVec {
+    /// Constructs a new, empty, BitVec.
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// let mut bv = BitVec::new();
+    /// ```
     pub fn new() -> Self {
         Self {
             ptr: NonNull::dangling(),
@@ -25,12 +33,35 @@ impl BitVec {
         }
     }
 
-    /// Converts the vector from bytes to ascii characters when printing
-    pub fn as_ascii(&self) -> AsciiWrapper<'_> {
-        AsciiWrapper(self)
+    /// Constructs a new, empty, BitVec, with at least the specified capacity.
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// let mut bv = BitVec::with_capacity(24);
+    /// ```
+    pub fn with_capacity(bits: usize) -> Self {
+        let bytes = bits.div_ceil(8);
+        let layout = Layout::array::<u8>(bytes).unwrap();
+        let ptr = unsafe { NonNull::new(alloc_zeroed(layout)).unwrap() };
+        
+        BitVec {
+            ptr,
+            cap: bytes,
+            len: bits,
+            byte_idx: 0,
+            bit_idx: 0,
+        }
     }
 
     /// Generate a new BitVector from an array
+    /// 
+    /// # Examples
+    ///
+    /// ```
+    /// let array_of_bytes = [24, 51, 67];
+    /// let mut bundle = BitVec::from(&array_of_bytes);
+    /// ```
     pub fn from(data: &[u8]) -> Self {
         let cap = data.len();
         let len = cap * 8;
@@ -53,6 +84,16 @@ impl BitVec {
             byte_idx: 0,
             bit_idx: 0,
         }
+    }
+
+    /// Get the current capacity in bytes
+    pub fn len(&self) -> usize {
+        self.cap
+    }
+
+    /// Get the number of bits stored in the vector (always less than or equal to the capacity)
+    pub fn len_bits(&self) -> usize {
+        self.len
     }
 
     /// Grow the vector by 8 bits
@@ -89,40 +130,18 @@ impl BitVec {
         }
     }
 
-    /// Sets the bit at the desired index
-    pub fn set_bit(&mut self, index: usize, value: bool) {
-        let byte_index = index / 8;
-        let bit_index = index % 8;
-
-        // Ensure we have enough capacity
-        if byte_index >= self.cap {
-            self.grow(byte_index - self.cap + 1);
-        }
-
-        unsafe {
-            let byte_ptr = self.ptr.as_ptr().add(byte_index);
-            if value {
-                *byte_ptr |= 1 << bit_index;
-            } else {
-                *byte_ptr &= !(1 << bit_index);
-            }
-        }
-
-        self.len = self.len.max(index + 1);
-    }
-
     /// Returns the bit value at the desired index
-    pub fn get_bit(&self, index: usize) -> Option<bool> {
+    pub fn get_bit(&self, index: usize) -> bool {
         let byte_index = index / 8;
         let bit_index = index % 8;
 
         if index >= self.len {
-            return None;
+            panic!("BitVec: index out of bounds");
         }
 
         unsafe {
             let byte = *self.ptr.as_ptr().add(byte_index);
-            Some((byte & (1 << bit_index)) != 0)
+            (byte & (1 << bit_index)) != 0
         }
     }
 
@@ -136,14 +155,9 @@ impl BitVec {
         self.byte_idx
     }
 
-    /// Get the current capacity in bytes
-    pub fn len(&self) -> usize {
-        self.cap
-    }
-
-    /// Get the number of bits stored in the vector (always less than or equal to the capacity)
-    pub fn len_bits(&self) -> usize {
-        self.len
+    /// Get current reading position in bits
+    pub fn get_read_position(&self) -> usize {
+        self.byte_idx * 8 + self.bit_idx as usize
     }
 
     /// Removes and returns the last bit in the vector
@@ -340,6 +354,7 @@ impl BitVec {
         Some(bit)
     }
 
+    /// Reads 8 bits in sequence and returns a byte (can be offset)
     pub fn read_byte(&mut self) -> Option<u8> {
         let mut byte: u8 = 0;
         for _ in 0..8 {
@@ -358,9 +373,72 @@ impl BitVec {
         self.bit_idx = 0;
     }
 
-    /// Get current reading position in bits
-    pub fn get_read_position(&self) -> usize {
-        self.byte_idx * 8 + self.bit_idx as usize
+    /// Finds the next set bit in a BitVector from a start index and returns
+    /// the index of that bit if one is found.
+    pub fn next_set_bit(&self, start_bit: usize) -> Option<usize> {
+        if start_bit >= self.len {
+            return None;
+        }
+        
+        let start_byte = start_bit / 8;
+        let start_bit_offset = (start_bit % 8) as u8;
+        
+        // Check first byte with offset
+        unsafe {
+            let first_byte = *self.ptr.as_ptr().add(start_byte);
+            let masked_first_byte = first_byte & (0xFFu8.wrapping_shl(start_bit_offset as u32));
+            
+            if masked_first_byte != 0 {
+                // Found a bit in the first byte
+                let bit_offset = masked_first_byte.trailing_zeros() as usize;
+                return Some(start_byte * 8 + bit_offset);
+            }
+        }
+        
+        // Check subsequent bytes
+        for byte_idx in (start_byte + 1)..self.cap {
+            unsafe {
+                let byte = *self.ptr.as_ptr().add(byte_idx);
+                if byte != 0 {
+                    // Found a bit
+                    let bit_offset = byte.trailing_zeros() as usize;
+                    let bit_pos = byte_idx * 8 + bit_offset;
+                    
+                    // Ensure we don't exceed length
+                    if bit_pos < self.len {
+                        return Some(bit_pos);
+                    } else {
+                        return None;
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+
+    /// Sets the bit at the desired index. If the bit to be set is beyond the
+    /// current capacity, then the vector will grow to accomodate the new bit
+    /// rather than panic.
+    pub fn set_bit(&mut self, index: usize, value: bool) {
+        let byte_index = index / 8;
+        let bit_index = index % 8;
+
+        // Ensure we have enough capacity
+        if byte_index >= self.cap {
+            self.grow(byte_index - self.cap + 1);
+        }
+
+        unsafe {
+            let byte_ptr = self.ptr.as_ptr().add(byte_index);
+            if value {
+                *byte_ptr |= 1 << bit_index;
+            } else {
+                *byte_ptr &= !(1 << bit_index);
+            }
+        }
+
+        self.len = self.len.max(index + 1);
     }
 
     /// Set reading position in bits
@@ -371,6 +449,72 @@ impl BitVec {
         self.byte_idx = bit_position / 8;
         self.bit_idx = (bit_position % 8) as u8;
         true
+    }
+
+    /// Checks if all bytes are zero
+    pub fn is_empty(&self) -> bool {
+        for byte_idx in 0..self.cap {
+            unsafe {
+                if *self.ptr.as_ptr().add(byte_idx) != 0 {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Returns a new BitVector containing the difference between two BitVectors
+    pub fn diff(&mut self, other: &BitVec) {
+        let min_cap = min(self.len.div_ceil(8), other.len.div_ceil(8));
+        
+        for byte_idx in 0..min_cap {
+            unsafe {
+                let self_byte = self.ptr.as_ptr().add(byte_idx);
+                let other_byte = other.ptr.as_ptr().add(byte_idx);
+                *self_byte &= !(*other_byte);
+            }
+        }
+    }
+
+    /// Returns a new BitVector containing the intersection between two BitVectors
+    pub fn intersec(&mut self, other: &BitVec) {
+        let min_cap = min(self.len.div_ceil(8), other.len.div_ceil(8));
+        
+        for byte_idx in 0..min_cap {
+            unsafe {
+                let self_byte = self.ptr.as_ptr().add(byte_idx);
+                let other_byte = other.ptr.as_ptr().add(byte_idx);
+                *self_byte &= *other_byte;
+            }
+        }
+
+        // Clear any bits beyond the other's capacity
+        if self.cap > other.cap {
+            for byte_idx in other.cap..self.cap {
+                unsafe {
+                    let self_byte = self.ptr.as_ptr().add(byte_idx);
+                    *self_byte = 0;
+                }
+            }
+        }
+    }
+
+    /// Returns a new BitVector containing the union between two BitVectors
+    pub fn union(&mut self, other: &BitVec) {
+        let min_cap = min(self.len.div_ceil(8), other.len.div_ceil(8));
+        
+        for byte_idx in 0..min_cap {
+            unsafe {
+                let self_byte = self.ptr.as_ptr().add(byte_idx);
+                let other_byte = other.ptr.as_ptr().add(byte_idx);
+                *self_byte |= *other_byte;
+            }
+        }
+    }
+
+    /// Converts the vector from bytes to ascii characters when printing
+    pub fn as_ascii(&self) -> AsciiWrapper<'_> {
+        AsciiWrapper(self)
     }
 }
 
