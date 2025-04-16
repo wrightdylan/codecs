@@ -327,8 +327,8 @@ impl BitVec {
     }
     
 
-    /// Deprecated as the name is too similar to a new function
-    #[deprecated(since = "0.1.0", note = "This function is deprecated, please use the seq_read function instead.")]
+    /// Deprecated as the name is too similar to a new method
+    #[deprecated(since = "0.1.0", note = "This method is deprecated, please use the seq_read method instead.")]
     pub fn read_bit(&mut self) -> Option<u8> {
         self.seq_read()
     }
@@ -441,6 +441,38 @@ impl BitVec {
         self.len = self.len.max(index + 1);
     }
 
+    /// Completely fill the BitVector with either true or false
+    pub fn fill(&mut self, value: bool) {
+        // Safety: We ensure the pointer is valid during BitVec creation
+        let slice = unsafe {
+            std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.cap)
+        };
+        
+        let fill_byte = if value { 0xff } else { 0x00 };        
+        let complete_bytes = self.len / 8;        
+        slice[..complete_bytes].fill(fill_byte);
+        
+        // Handle the partial byte at the end if needed
+        let remaining_bits = (self.len % 8) as u8;
+        if remaining_bits > 0 {
+            let mask = if value {
+                (1 << remaining_bits) - 1
+            } else {
+                !((1 << remaining_bits) - 1)
+            };
+            
+            if value {
+                slice[complete_bytes] |= mask;
+            } else {
+                slice[complete_bytes] &= mask;
+            }
+        }
+        
+        // Reset the sequential reading indices
+        self.byte_idx = 0;
+        self.bit_idx = 0;
+    }
+
     /// Set reading position in bits
     pub fn set_read_position(&mut self, bit_position: usize) -> bool {
         if bit_position >= self.len {
@@ -451,8 +483,14 @@ impl BitVec {
         true
     }
 
-    /// Checks if all bytes are zero
+    /// Deprecated as the name is misleading and does not match the intended purpose
+    #[deprecated(since = "0.1.1", note = "This method is deprecated, please use the is_zero method instead.")]
     pub fn is_empty(&self) -> bool {
+        self.is_zero()
+    }
+
+    /// Checks if all bytes are zero
+    pub fn is_zero(&self) -> bool {
         for byte_idx in 0..self.cap {
             unsafe {
                 if *self.ptr.as_ptr().add(byte_idx) != 0 {
