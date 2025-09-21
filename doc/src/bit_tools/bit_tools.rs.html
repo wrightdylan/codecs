@@ -4,7 +4,7 @@
 <a href=#4 id=4 data-nosnippet>4</a>//! expanded functionality.
 <a href=#5 id=5 data-nosnippet>5</a></span><span class="kw">use </span>std::alloc::{alloc, alloc_zeroed, dealloc, handle_alloc_error, Layout};
 <a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>std::cmp::min;
-<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>std::fmt::{<span class="self">self</span>, Display, Formatter};
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>std::fmt::{<span class="self">self</span>, Debug, Display, Formatter};
 <a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>std::ptr::NonNull;
 <a href=#9 id=9 data-nosnippet>9</a>
 <a href=#10 id=10 data-nosnippet>10</a><span class="kw">pub struct </span>BitVec {
@@ -587,38 +587,58 @@
 <a href=#587 id=587 data-nosnippet>587</a>    }
 <a href=#588 id=588 data-nosnippet>588</a>}
 <a href=#589 id=589 data-nosnippet>589</a>
-<a href=#590 id=590 data-nosnippet>590</a><span class="comment">// Implement Display
-<a href=#591 id=591 data-nosnippet>591</a></span><span class="kw">impl </span>Display <span class="kw">for </span>BitVec {
-<a href=#592 id=592 data-nosnippet>592</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
+<a href=#590 id=590 data-nosnippet>590</a><span class="comment">// Implement Debug
+<a href=#591 id=591 data-nosnippet>591</a></span><span class="kw">impl </span>Debug <span class="kw">for </span>BitVec {
+<a href=#592 id=592 data-nosnippet>592</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
 <a href=#593 id=593 data-nosnippet>593</a>        <span class="kw">let </span>bytes = <span class="kw">unsafe </span>{
 <a href=#594 id=594 data-nosnippet>594</a>            std::slice::from_raw_parts(<span class="self">self</span>.ptr.as_ptr(), (<span class="self">self</span>.len + <span class="number">7</span>) / <span class="number">8</span>)
 <a href=#595 id=595 data-nosnippet>595</a>        };
-<a href=#596 id=596 data-nosnippet>596</a>        
-<a href=#597 id=597 data-nosnippet>597</a>        <span class="kw">for </span>(i, <span class="kw-2">&amp;</span>byte) <span class="kw">in </span>bytes.iter().enumerate() {
-<a href=#598 id=598 data-nosnippet>598</a>            <span class="kw">if </span>i &gt; <span class="number">0 </span>{
-<a href=#599 id=599 data-nosnippet>599</a>                <span class="macro">write!</span>(f, <span class="string">" "</span>)<span class="question-mark">?</span>;
-<a href=#600 id=600 data-nosnippet>600</a>            }
-<a href=#601 id=601 data-nosnippet>601</a>            <span class="macro">write!</span>(f, <span class="string">"{}"</span>, byte)<span class="question-mark">?</span>;
-<a href=#602 id=602 data-nosnippet>602</a>        }
-<a href=#603 id=603 data-nosnippet>603</a>        
-<a href=#604 id=604 data-nosnippet>604</a>        <span class="prelude-val">Ok</span>(())
-<a href=#605 id=605 data-nosnippet>605</a>    }
-<a href=#606 id=606 data-nosnippet>606</a>}
-<a href=#607 id=607 data-nosnippet>607</a>
-<a href=#608 id=608 data-nosnippet>608</a><span class="comment">// Wrapper type for ASCII display
-<a href=#609 id=609 data-nosnippet>609</a></span><span class="kw">pub struct </span>AsciiWrapper&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'a </span>BitVec);
-<a href=#610 id=610 data-nosnippet>610</a>
-<a href=#611 id=611 data-nosnippet>611</a><span class="kw">impl </span>Display <span class="kw">for </span>AsciiWrapper&lt;<span class="lifetime">'_</span>&gt; {
+<a href=#596 id=596 data-nosnippet>596</a>
+<a href=#597 id=597 data-nosnippet>597</a>        <span class="macro">write!</span>(f, <span class="string">"BitVec("</span>)<span class="question-mark">?</span>;
+<a href=#598 id=598 data-nosnippet>598</a>        <span class="kw">for </span>(i, <span class="kw-2">&amp;</span>byte) <span class="kw">in </span>bytes.iter().enumerate() {
+<a href=#599 id=599 data-nosnippet>599</a>            <span class="kw">if </span>i &gt; <span class="number">0 </span>{
+<a href=#600 id=600 data-nosnippet>600</a>                <span class="macro">write!</span>(f, <span class="string">" "</span>)<span class="question-mark">?</span>;
+<a href=#601 id=601 data-nosnippet>601</a>            }
+<a href=#602 id=602 data-nosnippet>602</a>            <span class="macro">write!</span>(f, <span class="string">"{:08b}"</span>, byte)<span class="question-mark">?</span>;
+<a href=#603 id=603 data-nosnippet>603</a>        }
+<a href=#604 id=604 data-nosnippet>604</a>        <span class="macro">write!</span>(f, <span class="string">")"</span>)<span class="question-mark">?</span>;
+<a href=#605 id=605 data-nosnippet>605</a>
+<a href=#606 id=606 data-nosnippet>606</a>        <span class="prelude-val">Ok</span>(())
+<a href=#607 id=607 data-nosnippet>607</a>    }
+<a href=#608 id=608 data-nosnippet>608</a>}
+<a href=#609 id=609 data-nosnippet>609</a>
+<a href=#610 id=610 data-nosnippet>610</a><span class="comment">// Implement Display
+<a href=#611 id=611 data-nosnippet>611</a></span><span class="kw">impl </span>Display <span class="kw">for </span>BitVec {
 <a href=#612 id=612 data-nosnippet>612</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
-<a href=#613 id=613 data-nosnippet>613</a>        <span class="kw">let </span>bitvec = <span class="self">self</span>.<span class="number">0</span>;
-<a href=#614 id=614 data-nosnippet>614</a>        <span class="kw">let </span>bytes = <span class="kw">unsafe </span>{
-<a href=#615 id=615 data-nosnippet>615</a>            std::slice::from_raw_parts(bitvec.ptr.as_ptr(), (bitvec.len + <span class="number">7</span>) / <span class="number">8</span>)
-<a href=#616 id=616 data-nosnippet>616</a>        };
-<a href=#617 id=617 data-nosnippet>617</a>        
-<a href=#618 id=618 data-nosnippet>618</a>        <span class="kw">for </span><span class="kw-2">&amp;</span>byte <span class="kw">in </span>bytes {
-<a href=#619 id=619 data-nosnippet>619</a>            <span class="macro">write!</span>(f, <span class="string">"{}"</span>, byte <span class="kw">as </span>char)<span class="question-mark">?</span>;
-<a href=#620 id=620 data-nosnippet>620</a>        }
-<a href=#621 id=621 data-nosnippet>621</a>        
-<a href=#622 id=622 data-nosnippet>622</a>        <span class="prelude-val">Ok</span>(())
-<a href=#623 id=623 data-nosnippet>623</a>    }
-<a href=#624 id=624 data-nosnippet>624</a>}</code></pre></div></section></main></body></html>
+<a href=#613 id=613 data-nosnippet>613</a>        <span class="kw">let </span>bytes = <span class="kw">unsafe </span>{
+<a href=#614 id=614 data-nosnippet>614</a>            std::slice::from_raw_parts(<span class="self">self</span>.ptr.as_ptr(), (<span class="self">self</span>.len + <span class="number">7</span>) / <span class="number">8</span>)
+<a href=#615 id=615 data-nosnippet>615</a>        };
+<a href=#616 id=616 data-nosnippet>616</a>        
+<a href=#617 id=617 data-nosnippet>617</a>        <span class="kw">for </span>(i, <span class="kw-2">&amp;</span>byte) <span class="kw">in </span>bytes.iter().enumerate() {
+<a href=#618 id=618 data-nosnippet>618</a>            <span class="kw">if </span>i &gt; <span class="number">0 </span>{
+<a href=#619 id=619 data-nosnippet>619</a>                <span class="macro">write!</span>(f, <span class="string">" "</span>)<span class="question-mark">?</span>;
+<a href=#620 id=620 data-nosnippet>620</a>            }
+<a href=#621 id=621 data-nosnippet>621</a>            <span class="macro">write!</span>(f, <span class="string">"{}"</span>, byte)<span class="question-mark">?</span>;
+<a href=#622 id=622 data-nosnippet>622</a>        }
+<a href=#623 id=623 data-nosnippet>623</a>        
+<a href=#624 id=624 data-nosnippet>624</a>        <span class="prelude-val">Ok</span>(())
+<a href=#625 id=625 data-nosnippet>625</a>    }
+<a href=#626 id=626 data-nosnippet>626</a>}
+<a href=#627 id=627 data-nosnippet>627</a>
+<a href=#628 id=628 data-nosnippet>628</a><span class="comment">// Wrapper type for ASCII display
+<a href=#629 id=629 data-nosnippet>629</a></span><span class="kw">pub struct </span>AsciiWrapper&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'a </span>BitVec);
+<a href=#630 id=630 data-nosnippet>630</a>
+<a href=#631 id=631 data-nosnippet>631</a><span class="kw">impl </span>Display <span class="kw">for </span>AsciiWrapper&lt;<span class="lifetime">'_</span>&gt; {
+<a href=#632 id=632 data-nosnippet>632</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
+<a href=#633 id=633 data-nosnippet>633</a>        <span class="kw">let </span>bitvec = <span class="self">self</span>.<span class="number">0</span>;
+<a href=#634 id=634 data-nosnippet>634</a>        <span class="kw">let </span>bytes = <span class="kw">unsafe </span>{
+<a href=#635 id=635 data-nosnippet>635</a>            std::slice::from_raw_parts(bitvec.ptr.as_ptr(), (bitvec.len + <span class="number">7</span>) / <span class="number">8</span>)
+<a href=#636 id=636 data-nosnippet>636</a>        };
+<a href=#637 id=637 data-nosnippet>637</a>        
+<a href=#638 id=638 data-nosnippet>638</a>        <span class="kw">for </span><span class="kw-2">&amp;</span>byte <span class="kw">in </span>bytes {
+<a href=#639 id=639 data-nosnippet>639</a>            <span class="macro">write!</span>(f, <span class="string">"{}"</span>, byte <span class="kw">as </span>char)<span class="question-mark">?</span>;
+<a href=#640 id=640 data-nosnippet>640</a>        }
+<a href=#641 id=641 data-nosnippet>641</a>        
+<a href=#642 id=642 data-nosnippet>642</a>        <span class="prelude-val">Ok</span>(())
+<a href=#643 id=643 data-nosnippet>643</a>    }
+<a href=#644 id=644 data-nosnippet>644</a>}</code></pre></div></section></main></body></html>

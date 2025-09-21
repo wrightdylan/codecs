@@ -15,7 +15,7 @@
 Huffman is a greedy algorithm used to compress large text files. This is accomplished by building a tree based on the frequency of characters in the text. For more, see [article](https://en.wikipedia.org/wiki/Huffman_coding). Compression of files averages about 50%, and handles UTF-8 just fine.
 
 Update: `Serde` serialisation works out to be quite large, and it also includes a lot of empty bytes, most likely used as a fixed width header to describe the length of serialised bytes. Preliminary testing using a custom serialisation shows a reduction of the tree information to a 5th of `Serde`'s output. 
-This uses a custom schema as follows:
+This uses a custom schema as follows:\
 ┌───┬──╌╌──┬─┬──╌╌┄┄┄┄╌╌──┐\
 └───┴──╌╌──┴─┴──╌╌┄┄┄┄╌╌──┘\
 2 or 1-4 bytes: Tree data length either in two bytes or variable width bytes.\
@@ -34,12 +34,17 @@ Implementing variable width headers was just far too tempting. This is now one t
 Update 4:
 Fixed width or variable width headers can now be selected as a feature. The default is 2-byte fixed width, or use the `vwe_header` feature for the option.
 
+Update 5:
+Serialisation now uses my own [BitVec](https://github.com/wrightdylan/bitvecs) library hosted on github rather than relying on the original `bit_tools` module. This serves as a direct drop-in replacement.
+
 ### Implementations
+
 - `easy_encode()` provides a simple interface to encode a string to terminal.
 - `encode_to_bitstream()` provides a more useful interface that packages the encoded data with the tree, and can be saved to file.
 - `decode_from_bitstream()` reverses the above function.
 
 ## Variable width encoding
+
 Two new functions deal with encoding/decoding variable width headers. These are internal to the codec library, and are not intended for use externally. The first takes an unsigned int, ideally usize, and checks that it's less than the  maximum value of a 28-bit number. Numbers below 128 can be stored in a single byte where the most significant bit is 0, and the remaining bits are for data. Larger numbers will use an encoded first byte, and the remainder will be normal bytes. The first byte will have a 1 for each trailing byte, and a 0 separator. The table below shows how bytes are encoded for their size.
 
 | Range | First byte |
@@ -51,6 +56,7 @@ Two new functions deal with encoding/decoding variable width headers. These are 
 
 
 ## License
+
 This project is dual-licensed under both the [Apache License](LICENSE-APACHE) (Version 2.0) and [MIT license](LICENSE-MIT).
 
 `SPDX-License-Identifier: Apache-2.0 AND MIT`

@@ -9,8 +9,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
+name = "bitvecs"
+version = "0.1.1"
+source = "git+https://github.com/wrightdylan/bitvecs.git?tag=0.1.1#454c06228b5c024a1d5ddbf30365d3dec40e6c1e"
+
+[[package]]
 name = "codecs"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "bitvecs",
 ]

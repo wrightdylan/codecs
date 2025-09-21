@@ -9,8 +9,8 @@
 //! - `encode_to_bitstream()` provides a more useful interface that packages the
 //! encoded data with the tree, and can be saved to file.
 //! - `decode_from_bitstream()` reverses the above function.
-use crate::bit_tools::BitVec;
 use anyhow::{anyhow, Ok, Result};
+use bitvecs::BitVec;
 use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Ordering;
 

@@ -5,5 +5,4 @@
 //! ### Available algorithms
 //! * Huffman
 
-pub mod bit_tools;
 pub mod huffman;
